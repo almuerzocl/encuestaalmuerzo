@@ -47,7 +47,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
 #rec-state{font-weight:500}
 .dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--k);margin-right:6px;animation:p 1s infinite}
 @keyframes p{50%{opacity:.2}}
-audio{width:100%;margin-top:12px}
 .consent{display:flex;gap:10px;align-items:flex-start;font-size:14px;margin:4px 0 16px}
 .consent input{width:22px;height:22px;margin-top:2px;accent-color:#000;flex:none}
 #msg{margin:12px 0 0;font-weight:600}
@@ -113,22 +112,13 @@ footer a{color:var(--k);font-weight:600}
 
   <section>
     <h2>Al final, opcional</h2>
-    <p class="hint">¿Algo más que quieras contarnos? Puedes escribir o grabar un audio.</p>
+    <p class="hint">¿Algo más que quieras contarnos? Escríbelo aquí.</p>
     <textarea id="texto" maxlength="2000" aria-label="Tu respuesta escrita" placeholder="Escribe aquí"></textarea>
-    <div class="row" style="margin-top:14px">
-      <button type="button" id="rec">Grabar un audio</button>
-      <button type="button" id="stop" class="sec" hidden>Detener</button>
-      <button type="button" id="redo" class="sec" hidden>Borrar y repetir</button>
-      <span id="rec-state" role="status" aria-live="polite"></span>
-    </div>
-    <p class="hint" style="margin-top:8px">Hasta 60 segundos. Puedes escucharlo antes de enviarlo.</p>
-    <audio id="player" controls hidden></audio>
-    <p class="hint" id="audio-fallback" hidden>Tu celular o navegador no permite grabar aquí. No hay problema: usa la caja de texto.</p>
     <label class="consent" style="margin-top:14px"><input type="checkbox" id="novedades">
       <span>Quiero que me cuenten qué hicieron con mi aporte, al correo de mi cuenta.</span></label>
   </section>
   <label class="consent"><input type="checkbox" id="consent">
-    <span id="consent-text">Acepto que almuerzo.cl guarde lo que envíe aquí (mis respuestas y, si los uso, texto o audio), asociado a mi cuenta, para entender cómo almuerzan las personas y mejorar el servicio. Si grabo mi voz, el audio se guarda tal cual.</span></label>
+    <span id="consent-text">Acepto que almuerzo.cl guarde lo que envíe aquí (mis respuestas y, si lo escribo, texto), asociado a mi cuenta, para entender cómo almuerzan las personas y mejorar el servicio.</span></label>
   <div class="hp" aria-hidden="true"><label>Web <input type="text" id="web" tabindex="-1" autocomplete="off"></label></div>
   <button type="submit" id="send">Enviar</button>
   <p id="msg" role="alert"></p>
@@ -145,7 +135,6 @@ footer a{color:var(--k);font-weight:600}
 <script>
 (function(){
   var $=function(id){return document.getElementById(id)};
-  var MAX=60;
 
   // Identidad: el token firmado llega en el fragmento (#t=...), que el navegador no envia al servidor
   // ni a otros sitios. Se lee una vez, se borra de la barra de direcciones y vive solo en memoria.
@@ -223,75 +212,24 @@ footer a{color:var(--k);font-weight:600}
     });
   });
 
-  // Grabación de audio
-  var rec=$("rec"),stop=$("stop"),redo=$("redo"),player=$("player"),state=$("rec-state");
-  var recorder=null,chunks=[],blob=null,secs=0,timer=null,stream=null,startedAt=0;
-  var types=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg;codecs=opus"];
-  var mime="";
-  var canRecord=!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);
-  if(canRecord){
-    for(var i=0;i<types.length;i++){ if(MediaRecorder.isTypeSupported(types[i])){mime=types[i];break;} }
-  }
-  if(!canRecord){rec.disabled=true;$("audio-fallback").hidden=false;}
-
-  function tick(){
-    secs=Math.round((Date.now()-startedAt)/1000);
-    state.innerHTML='<span class="dot"></span>Grabando '+secs+' s / '+MAX+' s';
-    if(secs>=MAX) stopRec();
-  }
-  function stopRec(){
-    if(recorder&&recorder.state!=="inactive") recorder.stop();
-    clearInterval(timer);
-  }
-  rec.addEventListener("click",function(){
-    $("msg").textContent="";
-    navigator.mediaDevices.getUserMedia({audio:true}).then(function(s){
-      stream=s;chunks=[];blob=null;
-      var opts={audioBitsPerSecond:32000};if(mime)opts.mimeType=mime;
-      try{recorder=new MediaRecorder(s,opts);}catch(e){recorder=new MediaRecorder(s);}
-      recorder.ondataavailable=function(e){if(e.data&&e.data.size)chunks.push(e.data);};
-      recorder.onstop=function(){
-        stream.getTracks().forEach(function(t){t.stop();});
-        var type=(recorder.mimeType||mime||"audio/webm");
-        blob=new Blob(chunks,{type:type});
-        if(!blob.size){blob=null;state.textContent="No se escuchó nada. Prueba otra vez o usa el texto.";rec.hidden=false;stop.hidden=true;return;}
-        if(player.src)URL.revokeObjectURL(player.src);
-        player.src=URL.createObjectURL(blob);player.hidden=false;
-        state.textContent="Listo. Escúchalo antes de enviar.";
-        stop.hidden=true;redo.hidden=false;
-      };
-      recorder.start();startedAt=Date.now();secs=0;
-      rec.hidden=true;stop.hidden=false;redo.hidden=true;player.hidden=true;
-      timer=setInterval(tick,250);tick();
-    }).catch(function(){
-      state.textContent="No pudimos usar el micrófono. Si quieres, activa el permiso o escribe tu respuesta.";
-    });
-  });
-  stop.addEventListener("click",stopRec);
-  redo.addEventListener("click",function(){
-    blob=null;chunks=[];player.hidden=true;redo.hidden=true;rec.hidden=false;state.textContent="";
-  });
-
   // Envío: solo se muestra "gracias" si el servidor confirma que quedó guardado
   var sending=false;
   $("f").addEventListener("submit",function(ev){
     ev.preventDefault();
     if(sending)return;
     var msg=$("msg");msg.textContent="";
-    if(recorder&&recorder.state==="recording"){msg.textContent="Detén la grabación antes de enviar.";return;}
     var fd=new FormData();
     var texto=$("texto").value.trim();
-    var any=!!texto||!!blob;
+    var any=!!texto;
     if(texto)fd.append("texto",texto);
     ["q_tiempo","q_perdida","q_menu","q_idea","q_prepago","q_momento_pago","q_electronico","q_retiro","q_retiro_veces"].forEach(function(n){
       var c=document.querySelector('input[name="'+n+'"]:checked');
       if(c){fd.append(n,c.value);any=true;}
     });
-    if(!any){msg.textContent="Responde al menos una cosa: alguna pregunta, texto o audio.";return;}
+    if(!any){msg.textContent="Responde al menos una cosa: alguna pregunta o texto.";return;}
     if($("novedades").checked)fd.append("quiere_novedades","1");
-    fd.append("version_encuesta","2026-10-25-v1");
+    fd.append("version_encuesta","2026-10-25-v2");
     if(!$("consent").checked){msg.textContent="Marca el aviso para poder enviar.";return;}
-    if(blob){fd.append("audio",blob,"audio");fd.append("audio_segundos",String(Math.min(secs,MAX)));}
     if(!token){blocked(false);return;}fd.append("t",token);fd.append("web",$("web").value);fd.append("consent","1");
     sending=true;$("send").disabled=true;$("send").textContent="Enviando...";
     fetch("/api/respuesta",{method:"POST",body:fd}).then(function(r){
