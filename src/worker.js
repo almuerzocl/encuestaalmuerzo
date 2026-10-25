@@ -26,12 +26,9 @@ export class Limiter extends DurableObject {
   }
 }
 
-const SURVEY_VERSION = "2026-10-25-v1";
+const SURVEY_VERSION = "2026-10-25-v2";
 const MAX_TEXT = 2000;
-const MAX_AUDIO_BYTES = 2_500_000; // tope REAL de peso (60 s a ~32 kbps pesa ~250 KB). La duracion que declara el cliente no se verifica en el servidor.
 const MAX_REQUEST_BYTES = 3_000_000;
-const MAX_AUDIO_SECONDS = 60;
-const AUDIO_TYPES = ["audio/webm", "audio/mp4", "audio/ogg", "audio/aac", "audio/mpeg"];
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
@@ -123,19 +120,11 @@ async function handleSubmit(request, env) {
 
   if (payload.q_retiro === "si") payload.q_retiro_veces = oneOf(form.get("q_retiro_veces"), ["1_2", "3_4", "5_8", "9_mas"]);
 
-  const file = form.get("audio");
-  if (file && typeof file === "object" && file.size > 0) {
-    const base = (file.type || "").split(";")[0].toLowerCase();
-    if (!AUDIO_TYPES.includes(base)) return json({ ok: false, error: "Formato de audio no soportado" }, 415);
-    if (file.size > MAX_AUDIO_BYTES) return json({ ok: false, error: "El audio es muy largo" }, 413);
-    payload.audio_mime = base;
-    payload.audio_segundos = Math.min(intIn(form.get("audio_segundos"), 0, 600) ?? 0, MAX_AUDIO_SECONDS);
-    payload.audio_b64 = toBase64(new Uint8Array(await file.arrayBuffer()));
-  }
+  // Sin audio: la encuesta solo recibe texto. Cualquier campo "audio" que llegue se ignora (las columnas de audio de la hoja quedan vacias).
 
   const answered = ["q_tiempo", "q_perdida", "q_menu", "q_idea", "q_prepago", "q_momento_pago", "q_electronico", "q_retiro"]
     .some((k) => payload[k] != null);
-  if (!payload.texto && !payload.audio_b64 && !answered) return json({ ok: false, error: "Respuesta vacia" }, 400);
+  if (!payload.texto && !answered) return json({ ok: false, error: "Respuesta vacia" }, 400);
 
   // Topes ANTES de llamar a Drive, con un Durable Object (consistente, un solo contador).
   const lim = await env.LIMITER.get(env.LIMITER.idFromName("principal")).take(email);
