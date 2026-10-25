@@ -67,15 +67,14 @@ footer a{color:var(--k);font-weight:600}
 </div>
 <main>
 <div id="blocked" tabindex="-1">
-  <h2 id="blocked-title">Entra desde tu cuenta</h2>
+  <h2 id="blocked-title">Abre tu enlace personal</h2>
   <p id="blocked-text"></p>
-  <p><a href="https://app2.almuerzo.cl"><button type="button">Ir a mi cuenta</button></a></p>
 </div>
 <form id="f" novalidate style="display:none">
   <p class="hint" id="who"></p>
   <div id="renew" hidden style="border:2px solid #000;border-radius:12px;padding:14px;margin:0 0 16px">
-    <strong>Tu sesión venció, pero tu respuesta sigue aquí.</strong>
-    <p class="hint">Abre tu cuenta de almuerzo.cl en otra pestaña, vuelve a entrar a esta página desde allí y pega aquí el enlace nuevo. Si cierras o recargas esta página, se pierde lo que escribiste.</p>
+    <strong>Tu enlace venció, pero tu respuesta sigue aquí.</strong>
+    <p class="hint">Pega aquí un enlace personal nuevo de almuerzo.cl. Si cierras o recargas esta página, se pierde lo que escribiste.</p>
     <div class="row"><input id="renew-link" type="text" inputmode="url" aria-label="Enlace nuevo" placeholder="Pega el enlace nuevo" style="flex:1;min-width:200px;font:inherit;padding:10px;border:2px solid #000;border-radius:12px"><button type="button" id="renew-btn" class="sec">Renovar</button></div>
     <p class="hint" id="renew-msg" role="status"></p>
   </div>
@@ -157,37 +156,41 @@ footer a{color:var(--k);font-weight:600}
     if(location.search&&/[?&]t=/.test(location.search)){token=null;m=null;}
     if(history.replaceState)history.replaceState(null,"",location.pathname);
   })();
-  function blocked(expired){
+  function blocked(kind){
     $("f").style.display="none";$("blocked").style.display="block";
-    $("blocked-title").textContent=expired?"Tu sesión venció":"Entra desde tu cuenta";
-    $("blocked-text").textContent=expired
-      ?"Pasó el tiempo de la sesión y no pudimos guardar tu respuesta. Abre de nuevo esta página desde tu cuenta de almuerzo.cl."
-      :"Para dejar tu opinión necesitamos saber que eres tú, así podemos responderte después. Este enlace no trae tu sesión. Abre esta página desde tu cuenta de almuerzo.cl.";
+    var T={
+      none:["Abre tu enlace personal","Esta página se abre desde el enlace personal que va en tu correo de bienvenida de almuerzo.cl. Ábrela desde ahí para dejar tu opinión."],
+      expired:["Tu enlace venció","Este enlace ya venció. Necesitas un enlace personal nuevo de almuerzo.cl."],
+      invalid:["Este enlace no sirve","No pudimos validar este enlace. Ábrelo completo desde tu correo de bienvenida de almuerzo.cl."],
+      config:["Esta página aún no está lista","Todavía no podemos recibir respuestas desde aquí. Intenta más tarde."]
+    }[kind]||["Abre tu enlace personal","Esta página se abre desde el enlace personal que va en tu correo de bienvenida de almuerzo.cl."];
+    $("blocked-title").textContent=T[0];$("blocked-text").textContent=T[1];
   }
+  function kindOf(d){return d&&d.error==="token_expired"?"expired":d&&d.error==="not_configured"?"config":"invalid";}
   function checkWho(){
     return fetch("/api/quien",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({t:token})})
       .then(function(r){return r.json();});
   }
-  if(!token){blocked(false);}else{
+  if(!token){blocked("none");}else{
     checkWho().then(function(d){
       if(d&&d.ok){
         tokenExp=d.exp*1000;
-        $("who").textContent="Responderás con tu cuenta: "+d.email_masked;
+        $("who").textContent="Tu respuesta quedará asociada a: "+d.email_masked;
         $("f").style.display="block";
         setInterval(function(){
           var left=Math.round((tokenExp-Date.now())/60000);
-          if(left<=5&&left>=0){$("who").textContent="Tu sesión vence en "+Math.max(left,1)+" min. Envía pronto: si vence, tendrás que volver a entrar desde tu cuenta y empezar de nuevo.";}
+          if(left<=5&&left>=0){$("who").textContent="Tu enlace vence en "+Math.max(left,1)+" min. Envía pronto: si vence, tendrás que abrir un enlace nuevo y empezar de nuevo.";}
         },30000);
-      }else{token=null;blocked(d&&d.error==="token_expired");}
-    }).catch(function(){token=null;blocked(false);});
+      }else{token=null;blocked(kindOf(d));}
+    }).catch(function(){token=null;blocked("config");});
   }
   $("renew-btn").addEventListener("click",function(){
     var v=$("renew-link").value,m=v.match(/[#&?]t=([^&\s]+)/),rm=$("renew-msg");
-    if(!m){rm.textContent="Ese enlace no trae sesión. Pega el enlace completo que abre tu cuenta.";return;}
+    if(!m){rm.textContent="Ese texto no trae el enlace personal. Pega el enlace completo.";return;}
     try{token=decodeURIComponent(m[1]);}catch(e){token=m[1];}
     checkWho().then(function(d){
-      if(d&&d.ok){tokenExp=d.exp*1000;$("renew").hidden=true;$("renew-link").value="";$("who").textContent="Responderás con tu cuenta: "+d.email_masked;$("msg").textContent="Sesión renovada. Ya puedes enviar.";}
-      else{token=null;rm.textContent="Ese enlace no sirve o ya venció. Abre uno nuevo desde tu cuenta.";}
+      if(d&&d.ok){tokenExp=d.exp*1000;$("renew").hidden=true;$("renew-link").value="";$("who").textContent="Tu respuesta quedará asociada a: "+d.email_masked;$("msg").textContent="Enlace renovado. Ya puedes enviar.";}
+      else{token=null;rm.textContent="Ese enlace no sirve o ya venció. Necesitas uno nuevo.";}
     }).catch(function(){token=null;rm.textContent="No pudimos revisar el enlace. Intenta de nuevo.";});
   });
 
@@ -297,7 +300,7 @@ footer a{color:var(--k);font-weight:600}
       if(x.st===401){
         var ex=x.d&&x.d.error==="token_expired";token=null;
         if(ex){$("renew").hidden=false;$("renew").scrollIntoView({block:"center"});throw new Error("expired");}
-        blocked(false);return;
+        blocked("invalid");return;
       }
       if(x.d&&x.d.ok===true){
         $("f").style.display="none";var t=$("thanks");t.style.display="block";t.focus();window.scrollTo(0,0);
@@ -305,7 +308,7 @@ footer a{color:var(--k);font-weight:600}
         throw new Error(x.st);
       }
     }).catch(function(e){
-      if(e&&e.message==="expired"){msg.textContent="Renueva la sesión para enviar. Tu respuesta no se perdió.";sending=false;$("send").disabled=false;$("send").textContent="Enviar";return;}
+      if(e&&e.message==="expired"){msg.textContent="Pega un enlace personal nuevo para enviar. Tu respuesta no se perdió.";sending=false;$("send").disabled=false;$("send").textContent="Enviar";return;}
       msg.textContent="No pudimos guardar tu respuesta. No se perdió lo que escribiste: intenta de nuevo en un momento.";
       sending=false;$("send").disabled=false;$("send").textContent="Enviar";
     });
