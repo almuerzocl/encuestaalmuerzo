@@ -77,6 +77,7 @@ const maskEmail = (e) => e.replace(/^(.).*(@.*)$/, (_, a, d) => a + "***" + d);
 async function handleWho(request, env) {
   let t = null;
   try { t = (await request.json()).t; } catch {}
+  if (!env.IDENTITY_SECRET) return json({ ok: false, error: "not_configured" });
   const id = await verifyIdentity(t, env);
   if (id && id.email) return json({ ok: true, email_masked: maskEmail(id.email), exp: id.exp });
   return json({ ok: false, error: id && id.expired ? "token_expired" : "identity_required" });
